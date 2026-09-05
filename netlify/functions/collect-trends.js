@@ -48,5 +48,3 @@ export default async () => {
 
   return new Response("ok");
 };
-
-export const config = { path: "/.netlify/functions/collect-trends" };
