@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Threads Automator</title>
+<style>
+  :root {
+    --bg: #0b0b0d; --panel: #151517; --border: #262629;
+    --text: #f2f1ee; --muted: #8b8a86; --accent: #d4c9a8; --danger: #c1584a; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; line-height:1.5; }
+  header { padding:40px 32px 24px; border-bottom:1px solid var(--border); }
+  header h1 { margin:0 0 6px; font-size:28px; font-weight:600; letter-spacing:-0.01em; }
+  header p { margin:0; color:var(--muted); font-size:14px; }
+  main { max-width:960px; margin:0 auto; padding:32px; display:grid; gap:24px; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:24px; }
+  .panel h2 { margin:0 0 4px; font-size:16px; font-weight:600; }
+  .panel .sub { color:var(--muted); font-size:13px; margin:0 0 18px; }
+  select, textarea, input[type=text], input[type=password], input[type=datetime-local] {
+    width:100%; background:#0f0f11; border:1px solid var(--border); color:var(--text);
+    border-radius:10px; padding:10px 12px; font-size:14px; font-family:inherit;
+  }
+  textarea { min-height:90px; resize:vertical; }
+  label { font-size:12px; color:var(--muted); display:block; margin:14px 0 6px; }
+  label:first-child { margin-top:0; }
+  button { background:var(--accent); color:#16150f; border:none; border-radius:999px; padding:10px 18px; font-size:13px; font-weight:600; cursor:pointer; margin-top:16px; }
+  button.secondary { background:transparent; border:1px solid var(--border); color:var(--text); }
+  button.danger { background:var(--danger); color:#fff; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .account-chip, .queue-item, .example-item, .trend-item { background:#0f0f11; border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-top:10px; font-size:13px; }
+  .queue-item .meta, .trend-item .meta { color:var(--muted); font-size:12px; margin-top:4px; }
+  .draft-box { white-space:pre-wrap; background:#0f0f11; border:1px solid var(--border); border-radius:10px; padding:14px; font-size:14px; margin-top:12px; min-height:60px; }
+  .muted { color:var(--muted); font-size:12px; }
+  .banner { background:#1e1a10; border:1px solid #4a3d1f; color:var(--accent); border-radius:10px; padding:12px 14px; font-size:12px; margin-bottom:18px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Threads Automator</h1>
+  <p>One file, three tiny background functions. Auto-posts even when this tab is closed.</p>
+</header>
+
+<main>
+
+  <section class="panel">
+    <h2>Setup</h2>
+    <p class="sub">These stay in this browser only — needed to talk to your Netlify functions and to the Gemini API.</p>
+    <label>Shared secret (must match APP_SHARED_SECRET env var on Netlify)</label>
+    <input type="password" id="appSecret" placeholder="your shared secret" />
+    <label>Gemini API key (used to write drafts — kept in this browser only)</label>
+    <input type="password" id="geminiKey" placeholder="AIza..." />
+    <button onclick="saveSetup()">Save setup</button>
+    <div class="banner">This key uses Google's free tier (rate-limited, but $0). It's sent directly from this browser to Google when generating a draft, never touching your Netlify functions. Don't share this page's URL with anyone once you've entered it, since the key lives in this browser's local storage.</div>
+  </section>
+
+  <section class="panel">
+    <h2>Connected accounts</h2>
+    <p class="sub">Threads doesn't allow a static file to do the login handshake (that step needs a secret key). So: get a long-lived access token once per account using the one-time command in the README, then paste it here.</p>
+    <div id="accountsList"></div>
+    <label>Label (e.g. growth-tips)</label>
+    <input type="text" id="newLabel" placeholder="growth-tips" />
+    <label>Threads user id (from the token step)</label>
+    <input type="text" id="newUserId" placeholder="1784..." />
+    <label>Username</label>
+    <input type="text" id="newUsername" placeholder="yourhandle" />
+    <label>Long-lived access token</label>
+    <input type="text" id="newToken" placeholder="paste token here" />
+    <button onclick="addAccount()">Save account</button>
+  </section>
+
+  <section class="panel">
+    <h2>Style &amp; niche</h2>
+    <label>Account</label>
+    <select id="styleAccountSelect" onchange="onAccountChange()"></select>
+    <label>Persona / niche description</label>
+    <input type="text" id="personaInput" placeholder="how to grow on Threads and monetize an audience" />
+    <label>Niche keywords for trend-watching (comma separated)</label>
+    <input type="text" id="keywordsInput" placeholder="threads growth, creator monetization" />
+    <button onclick="saveAccountSettings()">Save settings</button>
+
+    <label style="margin-top:22px">Add a style example</label>
+    <textarea id="styleExampleInput" placeholder="Paste a post/paragraph in the tone you want future drafts to match..."></textarea>
+    <button onclick="addStyleExample()">Add example</button>
+    <div id="examplesList"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Trends</h2>
+    <p class="sub">Collected automatically once a day. You can also check manually.</p>
+    <button class="secondary" onclick="checkTrendsNow()">Check trends now</button>
+    <div id="trendsList"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Generate a post</h2>
+    <label>Account</label>
+    <select id="genAccountSelect"></select>
+    <label>Image (optional, this week's batch)</label>
+    <input type="file" id="imageInput" accept="image/*" />
+    <label>Or a topic (used if no image)</label>
+    <input type="text" id="topicInput" placeholder="the mistake killing your Threads reach" />
+    <button onclick="generateDraft()">Generate draft</button>
+    <div class="draft-box" id="draftOutput">Draft will appear here.</div>
+    <div class="row" id="draftActions" style="display:none">
+      <label style="margin:0">Post at</label>
+      <input type="datetime-local" id="scheduleTime" />
+      <button onclick="addToQueue()">Add to queue</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Posting queue</h2>
+    <p class="sub">The scheduled function checks this every 15 minutes, whether or not this page is open.</p>
+    <div id="queueList"></div>
+  </section>
+
+</main>
+
+<script>
+let accounts = [];
+let lastDraft = null;
+
+function setup() {
+  return {
+    appSecret: localStorage.getItem("appSecret") || "",
+    geminiKey: localStorage.getItem("geminiKey") || "",
+  };
+}
+function saveSetup() {
+  localStorage.setItem("appSecret", document.getElementById("appSecret").value.trim());
+  localStorage.setItem("geminiKey", document.getElementById("geminiKey").value.trim());
+  loadAll();
+}
+
+async function api(store, opts = {}) {
+  const { method = "GET", key, body } = opts;
+  const s = setup();
+  // relative path — this page and the functions live on the same Netlify site,
+  // so no site URL needs to be entered
+  const url = new URL("/.netlify/functions/data", window.location.origin);
+  url.searchParams.set("store", store);
+  if (key) url.searchParams.set("key", key);
+  const res = await fetch(url, {
+    method,
+    headers: { "content-type": "application/json", "x-app-secret": s.appSecret },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.json();
+}
+
+async function loadAll() {
+  document.getElementById("appSecret").value = setup().appSecret;
+  document.getElementById("geminiKey").value = setup().geminiKey;
+  await loadAccounts();
+  await loadQueue();
+}
+
+async function loadAccounts() {
+  const data = await api("accounts");
+  accounts = data.items || [];
+  const list = document.getElementById("accountsList");
+  list.innerHTML = accounts.length
+    ? accounts.map(a => `<div class="account-chip"><strong>@${a.username || a.label}</strong> &middot; ${(a.nicheKeywords||[]).length} keywords &middot; ${a.persona || "no persona set"}</div>`).join("")
+    : `<p class="muted">No accounts yet.</p>`;
+  for (const sel of [document.getElementById("styleAccountSelect"), document.getElementById("genAccountSelect")]) {
+    sel.innerHTML = accounts.map(a => `<option value="${a.id}">@${a.username || a.label}</option>`).join("");
+  }
+  if (accounts.length) onAccountChange();
+}
+
+async function addAccount() {
+  const id = document.getElementById("newUserId").value.trim();
+  const label = document.getElementById("newLabel").value.trim();
+  const username = document.getElementById("newUsername").value.trim();
+  const accessToken = document.getElementById("newToken").value.trim();
+  if (!id || !accessToken) return alert("User id and token are required");
+  await api("accounts", { method: "POST", key: id, body: { id, label, username, accessToken, nicheKeywords: [], persona: "" } });
+  loadAccounts();
+}
+
+function onAccountChange() {
+  const id = document.getElementById("styleAccountSelect").value;
+  const acc = accounts.find(a => a.id === id);
+  document.getElementById("personaInput").value = acc?.persona || "";
+  document.getElementById("keywordsInput").value = (acc?.nicheKeywords || []).join(", ");
+  loadExamples(id);
+  loadTrends(id);
+}
+
+async function saveAccountSettings() {
+  const id = document.getElementById("styleAccountSelect").value;
+  const acc = accounts.find(a => a.id === id);
+  const persona = document.getElementById("personaInput").value;
+  const nicheKeywords = document.getElementById("keywordsInput").value.split(",").map(s=>s.trim()).filter(Boolean);
+  await api("accounts", { method: "POST", key: id, body: { ...acc, persona, nicheKeywords } });
+  loadAccounts();
+}
+
+async function loadExamples(accountId) {
+  const data = await api("style", { key: accountId });
+  const examples = data.item?.examples || [];
+  document.getElementById("examplesList").innerHTML = examples.length
+    ? examples.map(e => `<div class="example-item">${e.text}</div>`).join("")
+    : `<p class="muted">No examples saved yet.</p>`;
+}
+
+async function addStyleExample() {
+  const accountId = document.getElementById("styleAccountSelect").value;
+  const text = document.getElementById("styleExampleInput").value.trim();
+  if (!text || !accountId) return;
+  const data = await api("style", { key: accountId });
+  const examples = (data.item?.examples || []).concat({ text, addedAt: Date.now() }).slice(-20);
+  await api("style", { method: "POST", key: accountId, body: { id: accountId, examples } });
+  document.getElementById("styleExampleInput").value = "";
+  loadExamples(accountId);
+}
+
+async function loadTrends(accountId) {
+  const data = await api("trends", { key: accountId });
+  const posts = data.item?.topPosts || [];
+  document.getElementById("trendsList").innerHTML = posts.length
+    ? posts.slice(0,8).map(p => `<div class="trend-item">${(p.text||"").slice(0,180)}<div class="meta">${new Date(p.timestamp).toLocaleString()}</div></div>`).join("")
+    : `<p class="muted">No trend data yet — runs daily, or click "Check trends now".</p>`;
+}
+
+async function checkTrendsNow() {
+  const id = document.getElementById("styleAccountSelect").value;
+  const acc = accounts.find(a => a.id === id);
+  if (!acc?.nicheKeywords?.length) return alert("Set niche keywords first");
+  let allPosts = [];
+  for (const kw of acc.nicheKeywords) {
+    const url = new URL("https://graph.threads.net/v1.0/keyword_search");
+    url.searchParams.set("q", kw);
+    url.searchParams.set("search_mode", "KEYWORD");
+    url.searchParams.set("media_type", "TEXT_POST");
+    url.searchParams.set("fields", "id,text,permalink,timestamp");
+    url.searchParams.set("access_token", acc.accessToken);
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      allPosts = allPosts.concat(data.data || []);
+    } catch (e) { console.warn("Trend fetch blocked (likely CORS) — daily background check will still work", e); }
+  }
+  allPosts.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+  await api("trends", { method: "POST", key: id, body: { id, collectedAt: Date.now(), keywords: acc.nicheKeywords, topPosts: allPosts.slice(0,15) } });
+  loadTrends(id);
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result.split(",")[1]);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+async function generateDraft() {
+  const accountId = document.getElementById("genAccountSelect").value;
+  const acc = accounts.find(a => a.id === accountId);
+  const topic = document.getElementById("topicInput").value;
+  const file = document.getElementById("imageInput").files[0];
+  const out = document.getElementById("draftOutput");
+  out.textContent = "Generating...";
+
+  const styleData = await api("style", { key: accountId });
+  const examples = styleData.item?.examples || [];
+  const exampleBlock = examples.length ? examples.map((e,i)=>`Example ${i+1}:\n${e.text}`).join("\n\n") : "(no examples yet — write punchy, direct, no-fluff)";
+
+  const trendData = await api("trends", { key: accountId });
+  const topPosts = trendData.item?.topPosts || [];
+  const trendBlock = topPosts.length ? topPosts.slice(0,5).map((p,i)=>`${i+1}. ${(p.text||"").slice(0,200)}`).join("\n") : "(no trend data yet)";
+
+  const systemPrompt = `You write Threads posts for a creator in this niche: "${acc?.persona || "growing on Threads and monetizing an audience"}".
+Match the tone, sentence rhythm, and paragraph length of these style examples:
+${exampleBlock}
+
+Take inspiration from structure/hooks (never wording or claims) from what's landing in this niche right now:
+${trendBlock}
+
+Output ONLY the finished post text. No preamble, no quotes, no hashtags unless the examples use them.`;
+
+  const content = [];
+  if (file) {
+    const b64 = await fileToBase64(file);
+    content.push({ inlineData: { mimeType: file.type, data: b64 } });
+    content.push({ text: "Write a Threads post inspired by this image." });
+  } else {
+    content.push({ text: `Write a Threads post about: ${topic || "a useful tip for growing on Threads"}` });
+  }
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": setup().geminiKey },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: "user", parts: content }],
+      }),
+    }
+  );
+  const data = await res.json();
+  lastDraft = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+  out.textContent = lastDraft || ("No draft generated. " + (data.error?.message || "Check your Gemini key."));
+  document.getElementById("draftActions").style.display = lastDraft ? "flex" : "none";
+}
+
+async function addToQueue() {
+  const accountId = document.getElementById("genAccountSelect").value;
+  const scheduleTime = document.getElementById("scheduleTime").value;
+  const scheduledFor = scheduleTime ? new Date(scheduleTime).getTime() : Date.now();
+  const id = crypto.randomUUID();
+  await api("queue", { method: "POST", key: id, body: { id, accountId, text: lastDraft, scheduledFor, status: "pending" } });
+  loadQueue();
+}
+
+async function loadQueue() {
+  const data = await api("queue");
+  const items = (data.items || []).sort((a,b)=>a.scheduledFor-b.scheduledFor);
+  document.getElementById("queueList").innerHTML = items.length ? items.map(i => `
+    <div class="queue-item">
+      <div>${i.text}</div>
+      <div class="meta">${i.status} &middot; ${new Date(i.scheduledFor).toLocaleString()}</div>
+      <button class="secondary danger" onclick="removeFromQueue('${i.id}')">Remove</button>
+    </div>`).join("") : `<p class="muted">Queue is empty.</p>`;
+}
+
+async function removeFromQueue(id) {
+  await api("queue", { method: "DELETE", key: id });
+  loadQueue();
+}
+
+loadAll();
+</script>
+
+</body>
+</html>
