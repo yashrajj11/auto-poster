@@ -1,0 +1,12 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+# These two are the entire "always running" backend. Everything else
+# (the dashboard) is the single index.html file.
+
+[functions."collect-trends"]
+  schedule = "0 6 * * *"   # once a day, 6am UTC
+
+[functions."scheduled-poster"]
+  schedule = "*/15 * * * *"   # every 15 minutes

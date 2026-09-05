@@ -1,0 +1,12 @@
+{
+  "name": "threads-automator",
+  "version": "2.0.0",
+  "description": "One-file dashboard + minimal scheduled functions for hands-off Threads posting",
+  "type": "module",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
